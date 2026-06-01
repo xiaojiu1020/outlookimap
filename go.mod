@@ -1,4 +1,4 @@
-module github.com/xiaojiu1020/imapclient
+module github.com/xiaojiu1020/outlookimap
 
 go 1.26.2
 
