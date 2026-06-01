@@ -1,0 +1,11 @@
+*.exe
+*.test
+*.out
+.gocache/
+dist/
+build/
+.env
+config.json
+cookies.json
+*.token
+*.cookie
