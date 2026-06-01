@@ -7,14 +7,14 @@ Small Go helper for reading Microsoft Outlook/Hotmail verification emails over I
 Before publishing this repository, replace the module path with your real GitHub path:
 
 ```powershell
-go mod edit -module github.com/<your-github-username>/imapclient
+go mod edit -module github.com/xiaojiu1020/imapclient
 go mod tidy
 ```
 
 Then other projects can use it with:
 
 ```powershell
-go get github.com/<your-github-username>/imapclient
+go get github.com/xiaojiu1020/imapclient
 ```
 
 ## Usage
@@ -27,7 +27,7 @@ import (
     "log"
     "time"
 
-    "github.com/<your-github-username>/imapclient"
+    "github.com/xiaojiu1020/imapclient"
 )
 
 func main() {
