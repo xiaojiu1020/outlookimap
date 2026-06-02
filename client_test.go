@@ -1,4 +1,4 @@
-package imapclient
+package outlookimap
 
 import (
 	"testing"

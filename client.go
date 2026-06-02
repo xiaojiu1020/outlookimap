@@ -1,6 +1,6 @@
-// Package imapclient provides a small IMAP client for reading verification
+// Package outlookimap provides a small IMAP client for reading verification
 // emails from Microsoft mailboxes with XOAUTH2.
-package imapclient
+package outlookimap
 
 import (
 	"errors"
