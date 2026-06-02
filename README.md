@@ -1,4 +1,4 @@
-# imapclient
+# outlookimap
 
 Small Go helper for reading Microsoft Outlook/Hotmail verification emails over IMAP with XOAUTH2.
 
@@ -7,14 +7,14 @@ Small Go helper for reading Microsoft Outlook/Hotmail verification emails over I
 Before publishing this repository, replace the module path with your real GitHub path:
 
 ```powershell
-go mod edit -module github.com/xiaojiu1020/imapclient
+go mod edit -module github.com/xiaojiu1020/outlookimap
 go mod tidy
 ```
 
 Then other projects can use it with:
 
 ```powershell
-go get github.com/xiaojiu1020/imapclient
+go get github.com/xiaojiu1020/outlookimap
 ```
 
 ## Usage
@@ -27,14 +27,14 @@ import (
     "log"
     "time"
 
-    "github.com/xiaojiu1020/imapclient"
+    "github.com/xiaojiu1020/outlookimap"
 )
 
 func main() {
-    cfg := imapclient.ImapConfig{
+    cfg := outlookimap.ImapConfig{
         Email:        "user@hotmail.com",
         Token:        "access_token_here",
-        AuthMethod:   imapclient.AuthXOAUTH2,
+        AuthMethod:   outlookimap.AuthXOAUTH2,
         PollTimeout:  2 * time.Minute,
         PollInterval: 5 * time.Second,
     }
