@@ -9,3 +9,4 @@ config.json
 cookies.json
 *.token
 *.cookie
+help.txt
