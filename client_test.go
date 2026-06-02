@@ -1,6 +1,7 @@
 package outlookimap
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -46,10 +47,18 @@ func TestConfigDefaults(t *testing.T) {
 	if cfg.pollTimeout() != defaultPollTimeout {
 		t.Fatalf("pollTimeout() = %v", cfg.pollTimeout())
 	}
+	if cfg.reconnectDelay() != defaultReconnectDelay {
+		t.Fatalf("reconnectDelay() = %v", cfg.reconnectDelay())
+	}
 
 	cfg.PollTimeout = time.Second
 	if cfg.pollTimeout() != time.Second {
 		t.Fatalf("pollTimeout() override = %v", cfg.pollTimeout())
+	}
+
+	cfg.ReconnectDelay = 500 * time.Millisecond
+	if cfg.reconnectDelay() != 500*time.Millisecond {
+		t.Fatalf("reconnectDelay() override = %v", cfg.reconnectDelay())
 	}
 }
 
@@ -98,5 +107,24 @@ func TestValidateAuthMethod(t *testing.T) {
 	}
 	if err := (&ImapConfig{}).validateAuth(AuthPassword); err == nil {
 		t.Fatal("validateAuth(AuthPassword) succeeded without password")
+	}
+}
+
+func TestIsTransientIMAPError(t *testing.T) {
+	transient := []string{
+		"EOF",
+		"imap: connection closed",
+		"read tcp 127.0.0.1:1: i/o timeout",
+		"write tcp 127.0.0.1:1: broken pipe",
+	}
+
+	for _, msg := range transient {
+		if !isTransientIMAPError(errors.New(msg)) {
+			t.Fatalf("isTransientIMAPError(%q) = false, want true", msg)
+		}
+	}
+
+	if isTransientIMAPError(errors.New("NO AUTHENTICATE failed")) {
+		t.Fatal("auth failure should not be treated as transient")
 	}
 }

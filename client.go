@@ -26,6 +26,7 @@ const (
 	defaultPollInterval   = 5 * time.Second
 	defaultMessageWindow  = 15 * time.Minute
 	defaultAuthRetries    = 3
+	defaultReconnectDelay = 2 * time.Second
 )
 
 // AuthMethod controls how Login authenticates after the TLS connection is open.
@@ -58,6 +59,7 @@ type ImapConfig struct {
 	PollTimeout    time.Duration
 	PollInterval   time.Duration
 	MessageWindow  time.Duration
+	ReconnectDelay time.Duration
 	AuthRetries    int
 
 	// By default a matched mail is marked as Seen. Set KeepUnread to leave it
@@ -195,29 +197,48 @@ func (cfg *ImapConfig) validateAuth(method AuthMethod) error {
 
 // GetImapMessage waits for an unread message matching mailbox, subject, and
 // sender, then returns the first text body it finds. It checks the newest
-// matching messages first and stops after PollTimeout.
+// matching messages first and stops after PollTimeout. If the IMAP connection
+// drops while polling, it reconnects with the configured AuthMethod and keeps
+// waiting until PollTimeout expires.
 func (cfg *ImapConfig) GetImapMessage(c *client.Client, mailboxName, subject, fromEmail string) (*string, error) {
-	if c == nil {
-		return nil, errors.New("imap get message: client is nil")
-	}
 	if mailboxName == "" {
 		mailboxName = "INBOX"
 	}
 
-	if _, err := c.Select(mailboxName, false); err != nil {
+	deadline := time.Now().Add(cfg.pollTimeout())
+	current := c
+	openedHere := false
+
+	if err := cfg.ensureSelected(&current, &openedHere, mailboxName, deadline); err != nil {
 		return nil, err
 	}
+	defer func() {
+		if openedHere && current != nil {
+			_ = current.Logout()
+		}
+	}()
 
-	deadline := time.Now().Add(cfg.pollTimeout())
 	for time.Now().Before(deadline) {
-		ids, err := c.Search(searchCriteria(subject, fromEmail))
+		ids, err := current.Search(searchCriteria(subject, fromEmail))
 		if err != nil {
+			if isTransientIMAPError(err) {
+				if err := cfg.reconnectAndSelect(&current, &openedHere, mailboxName, deadline); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			return nil, err
 		}
 
 		for i := len(ids) - 1; i >= 0; i-- {
-			text, ok, err := cfg.fetchMessageText(c, ids[i])
+			text, ok, err := cfg.fetchMessageText(current, ids[i])
 			if err != nil {
+				if isTransientIMAPError(err) {
+					if err := cfg.reconnectAndSelect(&current, &openedHere, mailboxName, deadline); err != nil {
+						return nil, err
+					}
+					break
+				}
 				return nil, err
 			}
 			if ok {
@@ -229,6 +250,67 @@ func (cfg *ImapConfig) GetImapMessage(c *client.Client, mailboxName, subject, fr
 	}
 
 	return nil, fmt.Errorf("email %s read message timeout", cfg.Email)
+}
+
+func (cfg *ImapConfig) ensureSelected(c **client.Client, openedHere *bool, mailboxName string, deadline time.Time) error {
+	if *c == nil {
+		return cfg.reconnectAndSelect(c, openedHere, mailboxName, deadline)
+	}
+
+	if _, err := (*c).Select(mailboxName, false); err != nil {
+		if isTransientIMAPError(err) {
+			return cfg.reconnectAndSelect(c, openedHere, mailboxName, deadline)
+		}
+		return err
+	}
+	return nil
+}
+
+func (cfg *ImapConfig) reconnectAndSelect(c **client.Client, openedHere *bool, mailboxName string, deadline time.Time) error {
+	var lastErr error
+	if *c != nil {
+		_ = (*c).Terminate()
+		*c = nil
+	}
+	*openedHere = false
+
+	firstAttempt := true
+	for time.Now().Before(deadline) {
+		if !firstAttempt {
+			cfg.sleepBeforeReconnect(deadline)
+		}
+		firstAttempt = false
+		if !time.Now().Before(deadline) {
+			break
+		}
+
+		newClient, err := cfg.Login()
+		if err != nil {
+			lastErr = err
+			if !isTransientIMAPError(err) {
+				return err
+			}
+			continue
+		}
+
+		if _, err := newClient.Select(mailboxName, false); err != nil {
+			lastErr = err
+			_ = newClient.Terminate()
+			if !isTransientIMAPError(err) {
+				return err
+			}
+			continue
+		}
+
+		*c = newClient
+		*openedHere = true
+		return nil
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("imap reconnect timeout for %s: %w", cfg.Email, lastErr)
+	}
+	return fmt.Errorf("imap reconnect timeout for %s", cfg.Email)
 }
 
 // KeepAlive periodically sends NOOP to keep the IMAP connection active. When
@@ -461,4 +543,56 @@ func (cfg *ImapConfig) sleepBeforeRetry(attempt int) {
 		return
 	}
 	time.Sleep(time.Duration(attempt) * time.Second)
+}
+
+func (cfg *ImapConfig) reconnectDelay() time.Duration {
+	if cfg.ReconnectDelay > 0 {
+		return cfg.ReconnectDelay
+	}
+	return defaultReconnectDelay
+}
+
+func (cfg *ImapConfig) sleepBeforeReconnect(deadline time.Time) {
+	delay := cfg.reconnectDelay()
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return
+	}
+	if delay > remaining {
+		delay = remaining
+	}
+	time.Sleep(delay)
+}
+
+func isTransientIMAPError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+	transientParts := []string{
+		"connection closed",
+		"connection reset",
+		"broken pipe",
+		"use of closed network connection",
+		"i/o timeout",
+		"tls: use of closed connection",
+		"unexpected eof",
+		"eof",
+	}
+	for _, part := range transientParts {
+		if strings.Contains(msg, part) {
+			return true
+		}
+	}
+	return false
 }

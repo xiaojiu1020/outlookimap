@@ -37,6 +37,7 @@ func main() {
         AuthMethod:   outlookimap.AuthXOAUTH2,
         PollTimeout:  2 * time.Minute,
         PollInterval: 5 * time.Second,
+        ReconnectDelay: 2 * time.Second,
     }
 
     c, err := cfg.LoginXOAUTH2()
@@ -61,6 +62,7 @@ func main() {
 - Defaults to `outlook.office365.com:993`.
 - Supports direct connection or SOCKS5 proxy.
 - Waits for unread matching messages in a loop.
+- Reconnects automatically if the IMAP connection drops while waiting.
 - Marks a matched message as read by default.
 - Set `KeepUnread: true` to leave messages unread.
 - Set `DeleteAfterRead: true` to mark matched messages deleted.
